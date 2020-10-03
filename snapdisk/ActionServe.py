@@ -27,6 +27,6 @@ from .Endpoints import StdinStdoutEndpoint
 class ActionServe(BaseAction):
 	def run(self):
 		endpoint = self._args.endpoint.create_listener()
-		with DiskImage(self._args.src, chunk_size = self._args.chunk_size) as self._image:
-			self._server = DiskImageServer(self._image, endpoint = endpoint)
+		with DiskImage(self._args.src, chunk_size = 1) as self._image:
+			self._server = DiskImageServer(self._image, endpoint = endpoint, max_chunk_size = self._args.max_chunk_size)
 			self._server.run()

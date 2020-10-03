@@ -74,12 +74,16 @@ class DiskImage(GenericDiskImage):
 		self._f.close()
 		self._f = None
 
-	def get_chunk_at(self, offset):
-		assert((offset % self._chunk_size) == 0)
-		chunk_no = offset // self._chunk_size
+	def get_chunk_at(self, offset, chunk_size = None):
+		if chunk_size is None:
+			chunk_size = self._chunk_size
+		end_offset = offset + chunk_size
+		if end_offset > self._disk_size:
+			end_offset = self._disk_size
+		expect_read_length = end_offset - offset
 		self._f.seek(offset)
-		data = self._f.read(self._chunk_size)
-		assert((len(data) == self._chunk_size) or (chunk_no == self.chunk_count - 1))
+		data = self._f.read(chunk_size)
+		assert(len(data) == expect_read_length)
 		return Chunk(data = data)
 
 	def iter_chunks(self, start_offset = None):
@@ -109,7 +113,6 @@ class RemoteDiskImage(GenericDiskImage):
 		self._marshal = CommandMarshalling.create_on_endpoint(self._endpoint)
 
 		meta_data = self._marshal.send_recv({ "cmd": "get_image_metadata" })
-		assert(meta_data.msg["chunk_size"] == chunk_size)
 		GenericDiskImage.__init__(self, device_name = meta_data.msg["device_name"], chunk_size = chunk_size, disk_size = meta_data.msg["disk_size"])
 
 	def __enter__(self):
@@ -121,9 +124,9 @@ class RemoteDiskImage(GenericDiskImage):
 	def iter_chunks(self, start_offset = None):
 		for chunk_no in range(start_offset // self._chunk_size, self.chunk_count):
 			offset = chunk_no * self._chunk_size
-			chunk_hash_msg = self._marshal.send_recv({ "cmd": "get_chunk_hash", "offset": offset })
+			chunk_hash_msg = self._marshal.send_recv({ "cmd": "get_chunk_hash", "offset": offset, "length": self.chunk_size })
 			def _retrieve():
-				chunk_data_msg = self._marshal.send_recv({ "cmd": "get_chunk_data", "offset": offset })
+				chunk_data_msg = self._marshal.send_recv({ "cmd": "get_chunk_data", "offset": offset, "length": self.chunk_size })
 				assert((len(chunk_data_msg.payload) == self._chunk_size) or (chunk_no == self.chunk_count - 1))
 				return Chunk(data = chunk_data_msg.payload)
 			yield RemoteChunk(chunk_hash_msg.msg["hash"], chunk_hash_msg.msg["size"], retrieval_callback = _retrieve)

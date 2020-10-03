@@ -25,29 +25,35 @@ class CommandException(Exception): pass
 class CommandQuit(Exception): pass
 
 class DiskImageServer():
-	def __init__(self, image, endpoint):
+	def __init__(self, image, endpoint, max_chunk_size):
 		self._image = image
 		self._endpoint = endpoint
 		self._marshal = CommandMarshalling.create_on_endpoint(self._endpoint)
 		self._chunk = None
+		self._chunk_length = None
 		self._chunk_offset = None
+		self._max_chunk_size = max_chunk_size
 
-	def _read_chunk(self, offset):
-		if self._chunk_offset != offset:
+	def _read_chunk(self, offset, length):
+		if length > self._max_chunk_size:
+			raise CommandException("Server chunk size limited at %d bytes, but %d bytes requested." % (self._max_chunk_size, length))
+		if (self._chunk_offset != offset) or (self._chunk_length != length):
 			self._chunk_offset = offset
-			self._chunk = self._image.get_chunk_at(self._chunk_offset)
+			self._chunk_length = length
+			self._chunk = self._image.get_chunk_at(self._chunk_offset, self._chunk_length)
 
 	def _cmd_get_image_metadata(self, request):
 		return {
 			"device_name":		self._image.device_name,
-			"chunk_size":		self._image.chunk_size,
 			"disk_size":		self._image.disk_size,
 		}
 
 	def _cmd_get_chunk_hash(self, request):
 		if not "offset" in request.msg:
 			raise CommandException("Excpected marshalled data to contain 'offset' key.")
-		self._read_chunk(request.msg["offset"])
+		if not "length" in request.msg:
+			raise CommandException("Excpected marshalled data to contain 'length' key.")
+		self._read_chunk(request.msg["offset"], request.msg["length"])
 		return {
 			"offset":		self._chunk_offset,
 			"hash":			self._chunk.hash_value,
@@ -57,7 +63,9 @@ class DiskImageServer():
 	def _cmd_get_chunk_data(self, request):
 		if not "offset" in request.msg:
 			raise CommandException("Excpected marshalled data to contain 'offset' key.")
-		self._read_chunk(request.msg["offset"])
+		if not "length" in request.msg:
+			raise CommandException("Excpected marshalled data to contain 'length' key.")
+		self._read_chunk(request.msg["offset"], request.msg["length"])
 		return ({
 			"offset":		self._chunk_offset,
 			"hash":			self._chunk.hash_value,

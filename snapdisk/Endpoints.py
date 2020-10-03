@@ -22,9 +22,12 @@
 import sys
 import socket
 import os
+import ssl
 import contextlib
 import subprocess
 import urllib.parse
+import tempfile
+from .Certificates import Certificates
 
 class EndpointTerminatedException(Exception): pass
 
@@ -60,6 +63,10 @@ class SocketEndpoint(ReliableEndpoint):
 	def __init__(self, sock):
 		self._sock = sock
 
+	@property
+	def sock(self):
+		return self._sock
+
 	def _send(self, data):
 		return self._sock.send(data)
 
@@ -67,18 +74,64 @@ class SocketEndpoint(ReliableEndpoint):
 		return self._sock.recv(length)
 
 	@classmethod
-	def create_ip_listener(cls, bind_address, bind_port):
+	def _prepare_ip_socket(cls, bind_address, bind_port):
 		sock = socket.socket()
 		sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 		sock.bind((bind_address, bind_port))
 		sock.listen(1)
+		return sock
+
+	@classmethod
+	def create_ip_listener(cls, bind_address, bind_port):
+		sock = cls._prepare_ip_socket(bind_address, bind_port)
 		(conn, peer) = sock.accept()
 		return cls(conn)
 
 	@classmethod
 	def create_ip_connection(cls, connect_address, connect_port):
-		conn = socket.connect((connect_address, connect_port))
+		conn = socket.create_connection((connect_address, connect_port))
 		return cls(conn)
+
+	@classmethod
+	def _create_tls_context(cls, keyfile, server = True):
+		cert_key = Certificates.load_cert_key(keyfile)
+		tls_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER if server else ssl.PROTOCOL_TLS_CLIENT)
+		tls_context.minimum_version = ssl.TLSVersion.TLSv1_2
+		tls_context.maximum_version = ssl.TLSVersion.TLSv1_2
+		tls_context.verify_mode = ssl.CERT_REQUIRED
+		tls_context.check_hostname = False
+		with tempfile.NamedTemporaryFile("w") as cert_file, tempfile.NamedTemporaryFile("w") as key_file:
+			cert_file.write(cert_key.cert)
+			key_file.write(cert_key.key)
+			cert_file.flush()
+			key_file.flush()
+			tls_context.load_cert_chain(cert_file.name, key_file.name)
+		with tempfile.NamedTemporaryFile("w") as trusted_peer_file:
+			trusted_peer_file.write("\n".join(cert_key.trusted_peer_certs))
+			trusted_peer_file.flush()
+			tls_context.load_verify_locations(cafile = trusted_peer_file.name)
+		tls_context.set_ciphers("ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256")
+		return tls_context
+
+	@classmethod
+	def create_tls_listener(cls, bind_address, bind_port, keyfile):
+		sock = cls._prepare_ip_socket(bind_address, bind_port)
+		tls_context = cls._create_tls_context(keyfile, server = True)
+		tls_sock = tls_context.wrap_socket(sock, server_side = True)
+		while True:
+			try:
+				(conn, peer) = tls_sock.accept()
+			except (ssl.SSLError, OSError) as e:
+				print("Connection of client rejected: %s - %s" % (e.__class__.__name__, str(e)))
+				continue
+			return cls(conn)
+
+	@classmethod
+	def create_tls_connection(cls, connect_address, connect_port, keyfile):
+		conn = socket.create_connection((connect_address, connect_port))
+		tls_context = cls._create_tls_context(keyfile, server = False)
+		tls_sock = tls_context.wrap_socket(conn, server_side = False)
+		return cls(tls_sock)
 
 	@classmethod
 	def create_unix_listener(cls, bind_filename):
@@ -127,6 +180,8 @@ class EndpointDefinition():
 			return StdinStdoutEndpoint()
 		elif self.scheme == "ip":
 			return SocketEndpoint.create_ip_listener(self["address"], self["port"])
+		elif self.scheme == "tls":
+			return SocketEndpoint.create_tls_listener(self["address"], self["port"], self["keyfile"])
 		elif self.scheme == "unix":
 			return SocketEndpoint.create_unix_listener(self["filename"])
 		else:
@@ -137,23 +192,30 @@ class EndpointDefinition():
 			return StdinStdoutEndpoint()
 		elif self.scheme == "ip":
 			return SocketEndpoint.create_ip_connection(self["address"], self["port"])
+		elif self.scheme == "tls":
+			return SocketEndpoint.create_tls_connection(self["address"], self["port"], self["keyfile"])
 		elif self.scheme == "unix":
 			return SocketEndpoint.create_unix_connection(self["filename"])
 		else:
 			raise NotImplementedError(self.scheme)
 
 	@classmethod
+	def _netloc_get_address_port(cls, netloc, default_port, default_address):
+		address_port = netloc.split(":", maxsplit = 1)
+		if len(address_port) == 1:
+			(address, port) = (address_port[0], default_port)
+		else:
+			(address, port) = (address_port[0], int(address_port[1]))
+		if address == "":
+			address = default_address
+		return (address, port)
+
+	@classmethod
 	def from_parsed_uri(cls, parsed):
 		if parsed.scheme == "stdout":
 			return cls(parsed.scheme)
 		elif parsed.scheme == "ip":
-			address_port = parsed.netloc.split(":", maxsplit = 1)
-			if len(address_port) == 1:
-				(address, port) = (address_port[0], 55860)
-			else:
-				(address, port) = (address_port[0], int(address_port[1]))
-			if address == "":
-				address = "127.0.0.1"
+			(address, port) = cls._netloc_get_address_port(parsed.netloc, default_port = 55860, default_address = "127.0.0.1")
 			return cls(parsed.scheme, variables = {
 				"address":		address,
 				"port":			port,
@@ -161,6 +223,14 @@ class EndpointDefinition():
 		elif parsed.scheme == "unix":
 			return cls(parsed.scheme, variables = {
 				"filename":		parsed.netloc + parsed.path,
+			})
+		elif parsed.scheme == "tls":
+			(address, port) = cls._netloc_get_address_port(parsed.netloc, default_port = 48748, default_address = "127.0.0.1")
+			keyfile = parsed.path[1:]
+			return cls(parsed.scheme, variables = {
+				"address":		address,
+				"port":			port,
+				"keyfile":		keyfile,
 			})
 		else:
 			raise NotImplementedError("Invalid scheme: %s" % (parsed.scheme))

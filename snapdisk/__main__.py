@@ -25,6 +25,7 @@ from .FriendlyArgumentParser import baseint_unit
 from .Endpoints import EndpointDefinition
 from .ActionSnapshot import ActionSnapshot
 from .ActionServe import ActionServe
+from .ActionGenKey import ActionGenKey
 
 mc = MultiCommand()
 
@@ -42,10 +43,16 @@ def genparser(parser):
 mc.register("snapshot", "Create a snapshot of a block device", genparser, action = ActionSnapshot)
 
 def genparser(parser):
-	parser.add_argument("-e", "--endpoint", metavar = "endpoint", type = EndpointDefinition.parse, default = "stdout://", help = "Specify endpoint to use. Can be stdout:// or ip://addr:port or unix://filename. Defaults to %(default)s.")
+	parser.add_argument("-e", "--endpoint", metavar = "endpoint", type = EndpointDefinition.parse, default = "stdout://", help = "Specify endpoint to use. Can be stdout:// or ip://addr:port, unix://filename or tls://addr:port/keyfilename. Defaults to %(default)s.")
 	parser.add_argument("-m", "--max-chunk-size", metavar = "size", type = baseint_unit, default = "512 Mi", help = "Specify the maximum chunk size that a client may request. Can use an SI or binary suffix. Defaults to %(default)s.")
 	parser.add_argument("--verbose", action = "count", default = 0, help = "Increase verbosity; can be specified multiple times.")
 	parser.add_argument("src", help = "Source image; must be a local file or block device.")
 mc.register("serve", "Start a snapshot server on stdout", genparser, action = ActionServe)
+
+def genparser(parser):
+	parser.add_argument("--verbose", action = "count", default = 0, help = "Increase verbosity; can be specified multiple times.")
+	parser.add_argument("server_keyfile", help = "Keyfile to be used in the snapdisk server.")
+	parser.add_argument("client_keyfile", help = "Keyfile to be used in the snapdisk client.")
+mc.register("genkey", "Generates a server and client key for use with TLS", genparser, action = ActionGenKey)
 
 mc.run(sys.argv[1:])

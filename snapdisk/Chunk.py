@@ -40,6 +40,7 @@ class GenericChunk():
 		dir_name = "%s/chunks/%s" % (target_dir, self.hash_value[:2])
 		with contextlib.suppress(FileExistsError):
 			os.makedirs(dir_name)
+		_ = self.data		# Assure that chunk is fetched entirely if remote
 		if compression is None:
 			file_name = "%s/%s" % (dir_name, self.hash_value)
 			with open(file_name, "wb") as f:

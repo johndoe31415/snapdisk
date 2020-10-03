@@ -28,7 +28,7 @@ from .SnapshotWriter import SnapshotMode, SnapshotWriter
 from .FilesizeFormatter import FilesizeFormatter
 from .TimeFormatter import TimeFormatter
 
-class SnapshotAction(BaseAction):
+class ActionSnapshot(BaseAction):
 	def _progress(self, writer):
 		pos = writer.position
 		disk_size = self._image.disk_size
@@ -53,7 +53,7 @@ class SnapshotAction(BaseAction):
 			self._image = DiskImage(self._args.src, chunk_size = self._args.chunk_size)
 		else:
 			# Some kind of endpoint was given.
-			self._image = RemoteDiskImage(parsed_src, chunk_size = self._args.chunk_size)
+			self._image = RemoteDiskImage(parsed_src, chunk_size = self._args.chunk_size, remote_snapdisk_binary = self._args.remote_snapdisk)
 
 		if self._args.name is None:
 			snapshot_name = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")

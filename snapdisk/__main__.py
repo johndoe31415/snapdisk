@@ -23,8 +23,8 @@ import sys
 from .MultiCommand import MultiCommand
 from .FriendlyArgumentParser import baseint_unit
 from .Endpoints import EndpointDefinition
-from .SnapshotAction import SnapshotAction
-from .ServerAction import ServerAction
+from .ActionSnapshot import ActionSnapshot
+from .ActionServe import ActionServe
 
 mc = MultiCommand()
 
@@ -34,17 +34,18 @@ def genparser(parser):
 	parser.add_argument("-m", "--mode", choices = [ "create", "resume", "overwrite"], default = "create", help = "Snapshotting mode. Can be any of %(choices)s, defaults to %(default)s.")
 	parser.add_argument("-c", "--compress", choices = [ "gz" ], default = None, help = "Specify compression method to use for chunks. Can be one of %(default)s, defaults to uncompressed.")
 	parser.add_argument("-s", "--chunk-size", metavar = "size", type = baseint_unit, default = "256 Mi", help = "Specify chunk size to use. Can use an SI or binary suffix. Defaults to %(default)s.")
+	parser.add_argument("--remote-snapdisk", metavar = "binary", default = "snapdisk.py", help = "When making a snapshot via ssh, this option gives the name of the snapdisk executable on the remote side. Defaults to %(default)s.")
 	parser.add_argument("--print-si-units", action = "store_true", help = "By default, units are printed in binary (powers of 1024); this option changes display of all data to SI prefixes (powers of 1000).")
 	parser.add_argument("--verbose", action = "count", default = 0, help = "Increase verbosity; can be specified multiple times.")
 	parser.add_argument("src", help = "Source image; can be a local block device or a remote URI.")
 	parser.add_argument("dst", help = "Destination directory.")
-mc.register("snapshot", "Create a snapshot of a block device", genparser, action = SnapshotAction)
+mc.register("snapshot", "Create a snapshot of a block device", genparser, action = ActionSnapshot)
 
 def genparser(parser):
 	parser.add_argument("-e", "--endpoint", metavar = "endpoint", type = EndpointDefinition.parse, default = "stdout://", help = "Specify endpoint to use. Can be stdout:// or ip://addr:port or unix://filename. Defaults to %(default)s.")
 	parser.add_argument("-s", "--chunk-size", metavar = "size", type = baseint_unit, default = "256 Mi", help = "Specify chunk size to use. Can use an SI or binary suffix. Defaults to %(default)s.")
 	parser.add_argument("--verbose", action = "count", default = 0, help = "Increase verbosity; can be specified multiple times.")
 	parser.add_argument("src", help = "Source image; must be a local file or block device.")
-mc.register("serve", "Start a snapshot server on stdout", genparser, action = ServerAction)
+mc.register("serve", "Start a snapshot server on stdout", genparser, action = ActionServe)
 
 mc.run(sys.argv[1:])

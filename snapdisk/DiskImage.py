@@ -88,8 +88,9 @@ class DiskImage(GenericDiskImage):
 			yield self.get_chunk_at(chunk_no * self._chunk_size)
 
 class RemoteDiskImage(GenericDiskImage):
-	def __init__(self, parsed_uri, chunk_size):
+	def __init__(self, parsed_uri, chunk_size, remote_snapdisk_binary):
 		self._parsed_uri = parsed_uri
+		self._remote_snapdisk_binary = remote_snapdisk_binary
 		if parsed_uri.scheme == "ssh":
 			username_hostname_port = parsed_uri.netloc
 			if ":" in username_hostname_port:
@@ -99,7 +100,7 @@ class RemoteDiskImage(GenericDiskImage):
 				username_hostname = username_hostname_port
 				port = 22
 			remote_filename = parsed_uri.path[1:]
-			remote_command = [ "snapdisk.py", "serve", remote_filename ]
+			remote_command = [ remote_snapdisk_binary, "serve", remote_filename ]
 			command = [ "ssh", "-p", str(port), username_hostname, " ".join(remote_command) ]
 			self._endpoint = SubprocessEndpoint(command)
 		else:

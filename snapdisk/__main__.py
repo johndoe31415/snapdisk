@@ -47,7 +47,7 @@ def genparser(parser):
 	parser.add_argument("-m", "--max-chunk-size", metavar = "size", type = baseint_unit, default = "512 Mi", help = "Specify the maximum chunk size that a client may request. Can use an SI or binary suffix. Defaults to %(default)s.")
 	parser.add_argument("--verbose", action = "count", default = 0, help = "Increase verbosity; can be specified multiple times.")
 	parser.add_argument("src", help = "Source image; must be a local file or block device.")
-mc.register("serve", "Start a snapshot server on stdout", genparser, action = ActionServe)
+mc.register("serve", "Start a snapshot server that serves an image", genparser, action = ActionServe)
 
 def genparser(parser):
 	parser.add_argument("--verbose", action = "count", default = 0, help = "Increase verbosity; can be specified multiple times.")
